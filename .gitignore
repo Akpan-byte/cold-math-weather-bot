@@ -9,3 +9,6 @@ node_modules/
 *.egg-info/
 dist/
 build/
+data/*.db
+data/scraper.log
+__pycache__/
