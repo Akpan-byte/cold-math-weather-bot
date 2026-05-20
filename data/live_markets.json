@@ -1,0 +1,58 @@
+[
+  {
+    "question": "Will the highest temperature in Shanghai be 24\u00b0C on May 20?",
+    "condition_id": "0x3e0d0662fce681768b0523dcffad4b8c46999aa9777363d8cb35f47677d379fe",
+    "market_id": "2289771",
+    "city": "Shanghai",
+    "threshold": 24,
+    "threshold_c": 24,
+    "unit": "C",
+    "date_raw": "May 20",
+    "yes_price": 0.0105,
+    "volume": 998.2902219999999,
+    "end_date": "2026-05-20T12:00:00Z",
+    "active": true
+  },
+  {
+    "question": "Will the highest temperature in Ankara be 19\u00b0C on May 20?",
+    "condition_id": "0x99dfbfd432ce5d84c5e27fb71513c0f856909c749314c67351a08e52b326f8e1",
+    "market_id": "2289699",
+    "city": "Ankara",
+    "threshold": 19,
+    "threshold_c": 19,
+    "unit": "C",
+    "date_raw": "May 20",
+    "yes_price": 0.13,
+    "volume": 99.50000000000001,
+    "end_date": "2026-05-20T12:00:00Z",
+    "active": true
+  },
+  {
+    "question": "Will the highest temperature in Paris be 22\u00b0C on May 21?",
+    "condition_id": "0x98fc4a1f3574efb47177480a3939f975f2d820341fcdee5f768576df6feb09c3",
+    "market_id": "2299318",
+    "city": "Paris",
+    "threshold": 22,
+    "threshold_c": 22,
+    "unit": "C",
+    "date_raw": "May 21",
+    "yes_price": 0.105,
+    "volume": 99.44042400000001,
+    "end_date": "2026-05-21T12:00:00Z",
+    "active": true
+  },
+  {
+    "question": "Will the highest temperature in Toronto be 14\u00b0C on May 21?",
+    "condition_id": "0x598101149e86e87556a6f8f44917307218eb267363fc40e21237ff07f3b792a3",
+    "market_id": "2299364",
+    "city": "Toronto",
+    "threshold": 14,
+    "threshold_c": 14,
+    "unit": "C",
+    "date_raw": "May 21",
+    "yes_price": 0.295,
+    "volume": 99.269037,
+    "end_date": "2026-05-21T12:00:00Z",
+    "active": true
+  }
+]

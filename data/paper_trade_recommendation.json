@@ -1,0 +1,19 @@
+{
+  "backtest_win_rate": 0.98,
+  "win_rate_95ci": [
+    0.8626,
+    0.9974
+  ],
+  "median_return": 0.1057,
+  "p5_return": -0.1206,
+  "p95_return": 0.1947,
+  "pct_profitable": 0.7504,
+  "avg_max_dd": 0.0707,
+  "recommendation": {
+    "min_duration_weeks": 12,
+    "ideal_duration_weeks": 24,
+    "starting_bankroll": 25,
+    "min_trades_before_scaling": 50,
+    "stop_if_win_rate_below": 0.9
+  }
+}

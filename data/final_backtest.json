@@ -1,0 +1,24 @@
+{
+  "n_mc_runs": 2000,
+  "config": {
+    "min_conf": 0.99,
+    "price_lo": 0.9,
+    "price_hi": 0.97,
+    "max_pos": 3.0,
+    "kelly": "quarter",
+    "margin_scaled": true,
+    "circuit_breakers": true
+  },
+  "results": {
+    "avg_return": 0.042271889088743325,
+    "median_return": 0.044366269836818045,
+    "p5_return": -0.090913405112955,
+    "p95_return": 0.12546542095016547,
+    "pct_profitable": 0.7375,
+    "avg_win_rate": 0.9763539276414763,
+    "worst_win_rate": 0.8888888888888888,
+    "avg_trades": 28.4295,
+    "avg_max_dd": 0.05488378325633077,
+    "worst_max_dd": 0.18544198317753882
+  }
+}

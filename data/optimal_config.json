@@ -1,0 +1,15 @@
+{
+  "min_conf": 0.97,
+  "max_pos": 5.0,
+  "kelly_m": 0.25,
+  "margin_sc": true,
+  "price_lo": 0.9,
+  "price_hi": 0.97,
+  "cb_c": 2,
+  "cb_d": 0.1,
+  "median_return": 0.10891805398897922,
+  "avg_max_dd": 0.07148465080760263,
+  "pct_profitable": 0.74,
+  "avg_win_rate": 0.9799824902371613,
+  "score": 0.1471757285851779
+}
