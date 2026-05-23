@@ -1,0 +1,132 @@
+============================================================
+          COLD MATH WEATHER MARKET QUANT MASTER REPORT
+============================================================
+Generated At: 2026-05-23T16:25:46.133698Z
+Resolved Markets Backtested: 131
+============================================================
+
+RANK #1: BUNDLE
+------------------------------------------------------------
+Parameters: Kelly=0.30 | Min Conf=0.51 | Min Margin=0.2°C | Offset=0.04
+Backtest Stats: Trades=126 | Win Rate=92.9% | Total PnL=+3.495 | Sharpe=9.04
+Advanced Sharpe: PSR=100.0% | DSR=97.1% | EWSR (weighted)=0.802
+
+  MONTE CARLO BOOTSTRAP (10,000 runs starting at $10,000):
+    P5 Final Equity (Worst-Case):   $33,357.52
+    P50 Final Equity (Median):       $45,347.38
+    P95 Final Equity (Best-Case):     $58,476.58
+    Typical Max Drawdown (P50):      7.0%
+    Probability of Profit (> $10k):  100.0%
+    Probability of Ruin (< $5k):     0.0%
+
+  MARKOV CHAIN REGIME ANALYSIS:
+    Regime Profile: BALANCED
+    Transition Probabilities:
+      Win  -> Win:  93.1%  |  Win  -> Loss: 6.9%
+      Loss -> Win:  88.9%  |  Loss -> Loss: 11.1%
+
+  CHRONOLOGICAL WALK-FORWARD VALIDATION:
+    Fold 1: Train PnL=+1.060 (WR=91.8%) | Test PnL=+0.500 (WR=93.9%) | Edge Holds: YES
+    Fold 2: Train PnL=+2.058 (WR=92.6%) | Test PnL=+0.503 (WR=93.8%) | Edge Holds: YES
+============================================================
+
+RANK #2: BUNDLE
+------------------------------------------------------------
+Parameters: Kelly=0.30 | Min Conf=0.51 | Min Margin=0.0°C | Offset=0.04
+Backtest Stats: Trades=126 | Win Rate=92.9% | Total PnL=+3.495 | Sharpe=9.04
+Advanced Sharpe: PSR=100.0% | DSR=97.1% | EWSR (weighted)=0.802
+
+  MONTE CARLO BOOTSTRAP (10,000 runs starting at $10,000):
+    P5 Final Equity (Worst-Case):   $33,569.19
+    P50 Final Equity (Median):       $45,302.95
+    P95 Final Equity (Best-Case):     $58,411.27
+    Typical Max Drawdown (P50):      7.0%
+    Probability of Profit (> $10k):  100.0%
+    Probability of Ruin (< $5k):     0.0%
+
+  MARKOV CHAIN REGIME ANALYSIS:
+    Regime Profile: BALANCED
+    Transition Probabilities:
+      Win  -> Win:  93.1%  |  Win  -> Loss: 6.9%
+      Loss -> Win:  88.9%  |  Loss -> Loss: 11.1%
+
+  CHRONOLOGICAL WALK-FORWARD VALIDATION:
+    Fold 1: Train PnL=+1.060 (WR=91.8%) | Test PnL=+0.500 (WR=93.9%) | Edge Holds: YES
+    Fold 2: Train PnL=+2.058 (WR=92.6%) | Test PnL=+0.503 (WR=93.8%) | Edge Holds: YES
+============================================================
+
+RANK #3: BIDIRECTIONAL
+------------------------------------------------------------
+Parameters: Kelly=0.30 | Min Conf=0.51 | Min Margin=0.2°C | Offset=0.04
+Backtest Stats: Trades=126 | Win Rate=92.9% | Total PnL=+3.425 | Sharpe=8.96
+Advanced Sharpe: PSR=100.0% | DSR=96.9% | EWSR (weighted)=0.795
+
+  MONTE CARLO BOOTSTRAP (10,000 runs starting at $10,000):
+    P5 Final Equity (Worst-Case):   $33,025.68
+    P50 Final Equity (Median):       $44,705.01
+    P95 Final Equity (Best-Case):     $57,987.82
+    Typical Max Drawdown (P50):      7.1%
+    Probability of Profit (> $10k):  100.0%
+    Probability of Ruin (< $5k):     0.0%
+
+  MARKOV CHAIN REGIME ANALYSIS:
+    Regime Profile: BALANCED
+    Transition Probabilities:
+      Win  -> Win:  93.1%  |  Win  -> Loss: 6.9%
+      Loss -> Win:  88.9%  |  Loss -> Loss: 11.1%
+
+  CHRONOLOGICAL WALK-FORWARD VALIDATION:
+    Fold 1: Train PnL=+1.044 (WR=91.8%) | Test PnL=+0.496 (WR=93.9%) | Edge Holds: YES
+    Fold 2: Train PnL=+2.024 (WR=92.6%) | Test PnL=+0.496 (WR=93.8%) | Edge Holds: YES
+============================================================
+
+RANK #4: BIDIRECTIONAL
+------------------------------------------------------------
+Parameters: Kelly=0.30 | Min Conf=0.51 | Min Margin=0.0°C | Offset=0.04
+Backtest Stats: Trades=126 | Win Rate=92.9% | Total PnL=+3.425 | Sharpe=8.96
+Advanced Sharpe: PSR=100.0% | DSR=96.9% | EWSR (weighted)=0.795
+
+  MONTE CARLO BOOTSTRAP (10,000 runs starting at $10,000):
+    P5 Final Equity (Worst-Case):   $33,032.55
+    P50 Final Equity (Median):       $44,506.09
+    P95 Final Equity (Best-Case):     $57,718.53
+    Typical Max Drawdown (P50):      7.1%
+    Probability of Profit (> $10k):  100.0%
+    Probability of Ruin (< $5k):     0.0%
+
+  MARKOV CHAIN REGIME ANALYSIS:
+    Regime Profile: BALANCED
+    Transition Probabilities:
+      Win  -> Win:  93.1%  |  Win  -> Loss: 6.9%
+      Loss -> Win:  88.9%  |  Loss -> Loss: 11.1%
+
+  CHRONOLOGICAL WALK-FORWARD VALIDATION:
+    Fold 1: Train PnL=+1.044 (WR=91.8%) | Test PnL=+0.496 (WR=93.9%) | Edge Holds: YES
+    Fold 2: Train PnL=+2.024 (WR=92.6%) | Test PnL=+0.496 (WR=93.8%) | Edge Holds: YES
+============================================================
+
+RANK #5: BIDIRECTIONAL
+------------------------------------------------------------
+Parameters: Kelly=0.30 | Min Conf=0.51 | Min Margin=0.0°C | Offset=0.04
+Backtest Stats: Trades=126 | Win Rate=92.9% | Total PnL=+3.346 | Sharpe=8.88
+Advanced Sharpe: PSR=100.0% | DSR=96.7% | EWSR (weighted)=0.788
+
+  MONTE CARLO BOOTSTRAP (10,000 runs starting at $10,000):
+    P5 Final Equity (Worst-Case):   $32,399.76
+    P50 Final Equity (Median):       $43,921.64
+    P95 Final Equity (Best-Case):     $56,281.24
+    Typical Max Drawdown (P50):      7.0%
+    Probability of Profit (> $10k):  100.0%
+    Probability of Ruin (< $5k):     0.0%
+
+  MARKOV CHAIN REGIME ANALYSIS:
+    Regime Profile: BALANCED
+    Transition Probabilities:
+      Win  -> Win:  93.1%  |  Win  -> Loss: 6.9%
+      Loss -> Win:  88.9%  |  Loss -> Loss: 11.1%
+
+  CHRONOLOGICAL WALK-FORWARD VALIDATION:
+    Fold 1: Train PnL=+1.026 (WR=91.8%) | Test PnL=+0.489 (WR=93.9%) | Edge Holds: YES
+    Fold 2: Train PnL=+1.983 (WR=92.6%) | Test PnL=+0.489 (WR=93.8%) | Edge Holds: YES
+============================================================
+
