@@ -350,6 +350,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
     
     def do_GET(self):
         if self.path == '/' or self.path == '/index.html':
+            # Dynamically serve the premium unified index.html from coldmath-dashboard if it exists
+            premium_path = Path("/config/coldmath-dashboard/index.html")
+            if premium_path.exists():
+                try:
+                    with open(premium_path, 'r', encoding='utf-8') as f:
+                        self._send_html(f.read())
+                        return
+                except Exception as e:
+                    logger.error(f"Failed to read premium index.html: {e}")
             self._send_html(DASHBOARD_HTML)
         elif self.path == '/api/status':
             self._send_json(self._get_status())
