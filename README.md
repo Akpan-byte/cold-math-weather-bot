@@ -65,8 +65,8 @@ This will run the 18,000-simulation sweep on the local resolved markets, execute
 
 ## Live Trading & Paper Trading
 
-To start the built-in live paper trading engine (using real-time order books for slippage and shadow trading):
+To start the built-in live paper trading engine with **global Open-Meteo meteorological integration** and **70+ cities geocoding**:
 ```bash
-python3 run.py paper --port 8199 --interval 300
+python3 run.py paper --port 8205 --interval 300
 ```
-Check the local dashboard at `http://localhost:8199` to monitor geocoding, forecast sweeps, and shadow-order execution.
+Check the interactive, premium dual-tab dashboard locally at **`http://localhost:8205`** or hosted live on Vercel at **[https://coldmath-dashboard.vercel.app](https://coldmath-dashboard.vercel.app)** to monitor global forecast sweeps, real-time candidate discoverability, and shadow limit-order execution.
