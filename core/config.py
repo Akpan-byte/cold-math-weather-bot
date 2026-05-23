@@ -10,14 +10,14 @@ import os
 @dataclass
 class ColdMathConfig:
     # ─── Strategy Parameters ───
-    min_nws_confidence: float = 0.99       # NWS forecast must be ≥99% certain
-    max_entry_price: float = 0.96          # Buy contracts at ≤96¢ (wider edge than 97¢)
-    min_entry_price: float = 0.88          # Don't buy below 88¢ (something's wrong if it's that cheap)
-    max_resolution_hours: float = 24.0     # Only trade markets resolving within 24h
-    min_edge_cents: float = 0.03           # Minimum 3¢ edge per contract
+    min_nws_confidence: float = 0.51       # Optimized BUNDLE threshold (was 0.99)
+    max_entry_price: float = 0.96          # Buy contracts at ≤96¢
+    min_entry_price: float = 0.10          # Wider coverage (was 0.88)
+    max_resolution_hours: float = 72.0     # Horizon extension (was 24.0)
+    min_edge_cents: float = 0.04           # Minimum 4¢ edge per BUNDLE (was 0.03)
     
     # ─── Kelly Sizing ───
-    kelly_fraction: float = 0.1425         # Quarter Kelly (14.25%)
+    kelly_fraction: float = 0.30           # Optimized Kelly BUNDLE (was 0.1425)
     min_position_usd: float = 1.00         # Polymarket minimum trade
     max_position_usd: float = 1000.00      # Liquidity safety cap
     max_position_pct_book: float = 0.25    # Never take more than 25% of available liquidity

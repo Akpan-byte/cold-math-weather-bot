@@ -1,14 +1,15 @@
 """
-Cold Math Weather Bot — NWS Forecast Integration
-Fetches and parses National Weather Service forecasts to compute confidence scores.
+❄️ Cold Math Weather Bot — Global Weather Integration
+Universal weather client using Open-Meteo API for global coverage.
+Computes confidence scores for Polymarket weather contracts (ranges and thresholds).
 """
 import asyncio
 import logging
 import re
 import time
+import math
 from datetime import datetime, timezone, timedelta
 from typing import Optional
-from functools import lru_cache
 
 import aiohttp
 
@@ -20,13 +21,13 @@ logger = logging.getLogger("coldmath.nws")
 
 class NWSClient:
     """
-    Async client for the National Weather Service API.
-    Free, no API key required. Rate limit: polite use (cache aggressively).
+    Async client for Open-Meteo Global Weather API.
+    Provides free, public, global weather forecasts. No API key required.
     """
     
     def __init__(self, config: ColdMathConfig):
         self.cfg = config
-        self.base_url = config.nws_api_base
+        self.base_url = "https://api.open-meteo.com/v1/forecast"
         self.user_agent = config.nws_user_agent
         self._session: Optional[aiohttp.ClientSession] = None
         self._cache: dict = {}
@@ -36,7 +37,7 @@ class NWSClient:
         if self._session is None or self._session.closed:
             self._session = aiohttp.ClientSession(
                 headers={"User-Agent": self.user_agent},
-                timeout=aiohttp.ClientTimeout(total=10)
+                timeout=aiohttp.ClientTimeout(total=15)
             )
         return self._session
     
@@ -65,404 +66,344 @@ class NWSClient:
                     self._cache_timestamps[cache_key] = time.time()
                     return data
                 else:
-                    logger.warning(f"NWS API {resp.status} for {url}")
+                    logger.warning(f"Open-Meteo API {resp.status} for {url}")
                     return None
         except (aiohttp.ClientError, asyncio.TimeoutError) as e:
-            logger.error(f"NWS API error: {e}")
+            logger.error(f"Open-Meteo API error: {e}")
             return None
-    
-    async def get_points(self, lat: float, lon: float) -> Optional[dict]:
-        """Get grid point metadata for a location."""
-        url = f"{self.base_url}/points/{lat:.4f},{lon:.4f}"
-        return await self._get(url)
-    
-    async def get_forecast(self, grid_id: str, grid_x: int, grid_y: int) -> Optional[dict]:
-        """Get hourly forecast for a grid point."""
-        url = f"{self.base_url}/gridpoints/{grid_id}/{grid_x},{grid_y}/forecast/hourly"
-        return await self._get(url)
     
     async def get_forecast_for_location(self, lat: float, lon: float) -> Optional[dict]:
-        """Get hourly forecast for a lat/lon (two-step: points → forecast)."""
-        points = await self.get_points(lat, lon)
-        if not points or "properties" not in points:
-            return None
-        
-        props = points["properties"]
-        grid_id = props.get("gridId", "")
-        grid_x = props.get("gridX", 0)
-        grid_y = props.get("gridY", 0)
-        forecast_url = props.get("forecastHourly", "")
-        
-        if forecast_url:
-            return await self._get(forecast_url)
-        
-        return await self.get_forecast(grid_id, grid_x, grid_y)
+        """Get 7-day daily temperature forecast from Open-Meteo in Fahrenheit."""
+        url = (
+            f"https://api.open-meteo.com/v1/forecast?"
+            f"latitude={lat:.4f}&longitude={lon:.4f}"
+            f"&daily=temperature_2m_max,temperature_2m_min"
+            f"&temperature_unit=fahrenheit"
+            f"&timezone=GMT&forecast_days=7"
+        )
+        return await self._get(url)
     
     async def get_observation(self, station_id: str) -> Optional[dict]:
-        """Get latest observation from a weather station."""
-        url = f"{self.base_url}/stations/{station_id}/observations/latest"
-        return await self._get(url)
-    
-    async def get_stations_near(self, lat: float, lon: float, limit: int = 5) -> Optional[dict]:
-        """Find weather stations near a location."""
-        url = f"{self.base_url}/stations?location={lat:.4f},{lon:.4f}&limit={limit}"
-        return await self._get(url)
+        """Mock observation endpoint (backward compatibility)."""
+        return {"properties": {"temperature": {"value": 20.0}}}
 
 
 class NWSConfidenceScorer:
     """
-    Computes a confidence score (0-1) for a weather forecast matching
-    a Polymarket weather market's resolution criteria.
-    
-    The key insight: NWS forecasts are highly accurate for near-term
-    temperature ranges. If NWS says "high of 75°F" with a range of 
-    ±3°F, and the market asks "Will high temp exceed 80°F?", our 
-    confidence that it WON'T exceed 80°F is extremely high.
+    Computes confidence score (0-1) for a weather forecast matching Polymarket criteria.
+    Uses interpolated RMSE by lead time to run Gaussian cumulative distribution scaling.
     """
     
-    # NWS forecast accuracy by lead time (empirical from NWS verification data)
+    # Baseline weather model accuracy by lead time (lead hours → baseline probability weight)
     ACCURACY_BY_HOURS = {
-        1: 0.999,    # 1 hour ahead: near-perfect
-        3: 0.998,    # 3 hours: very high
-        6: 0.995,    # 6 hours: high
-        12: 0.99,    # 12 hours: still very good
-        24: 0.97,    # 24 hours: good
-        48: 0.93,    # 48 hours: decent
-        72: 0.88,    # 3 days: moderate
-        96: 0.82,    # 4 days: lowering
-        120: 0.75,   # 5 days: significant uncertainty
-        168: 0.65,   # 7 days: weak
+        1: 0.999, 3: 0.998, 6: 0.995, 12: 0.99, 24: 0.97,
+        48: 0.93, 72: 0.88, 96: 0.82, 120: 0.75, 168: 0.65
     }
     
-    # Temperature forecast RMSE by lead time (°F)
+    # Temperature forecast standard error / RMSE by lead time (°F)
     TEMP_RMSE_BY_HOURS = {
         1: 1.0, 3: 1.5, 6: 2.0, 12: 2.5, 24: 3.0,
         48: 4.0, 72: 5.0, 96: 6.0, 120: 7.0, 168: 8.0
     }
     
     @classmethod
+    def _interpolate_accuracy(cls, hours: float) -> float:
+        hours = max(1.0, min(168.0, hours))
+        hours_key = min(cls.ACCURACY_BY_HOURS.keys(), key=lambda x: abs(x - hours))
+        return cls.ACCURACY_BY_HOURS[hours_key]
+    
+    @classmethod
+    def _interpolate_rmse(cls, hours: float) -> float:
+        hours = max(1.0, min(168.0, hours))
+        hours_key = min(cls.TEMP_RMSE_BY_HOURS.keys(), key=lambda x: abs(x - hours))
+        return cls.TEMP_RMSE_BY_HOURS[hours_key]
+    
+    @classmethod
     def score_temperature_market(cls, forecast_high: Optional[float],
                                   forecast_low: Optional[float],
                                   threshold_temp: float,
-                                  comparison: str,  # "above" or "below"
+                                  comparison: str,  # "above", "below", "range"
                                   hours_to_resolution: float,
-                                  current_temp: Optional[float] = None) -> float:
+                                  current_temp: Optional[float] = None,
+                                  range_low: Optional[float] = None,
+                                  range_high: Optional[float] = None) -> float:
         """
-        Score confidence for a temperature threshold market.
-        
-        E.g. "Will NYC high temp exceed 90°F today?"
-        - forecast_high = 82, threshold = 90, comparison = "above"
-        - The forecast says NO with high confidence
+        Score confidence for a temperature contract using a Gaussian CDF error curve.
+        Supports thresholds (above/below) and narrow range-bound options (range).
+        All inputs must be in Fahrenheit.
         """
-        # Get base accuracy from lead time
         base_accuracy = cls._interpolate_accuracy(hours_to_resolution)
         temp_rmse = cls._interpolate_rmse(hours_to_resolution)
         
-        # Determine which forecast value to use
-        if comparison == "above":
-            # Market asks "will temp exceed X?"
+        # 1. Narrow Range-Bound bet (e.g. between 46-47°F)
+        if comparison == "range":
+            forecast_val = forecast_high if forecast_high is not None else current_temp
+            if forecast_val is None or range_low is None or range_high is None:
+                return 0.5
+            
+            z_high = (range_high - forecast_val) / temp_rmse
+            z_low = (range_low - forecast_val) / temp_rmse
+            
+            cdf_high = 0.5 * (1.0 + math.erf(z_high / math.sqrt(2.0)))
+            cdf_low = 0.5 * (1.0 + math.erf(z_low / math.sqrt(2.0)))
+            
+            prob_in_range = max(0.0, min(1.0, cdf_high - cdf_low))
+            
+            # Polymarket range bets are highly narrow YES ranges. 
+            # We buy the NO side, so the win probability is the probability that it falls OUTSIDE the range.
+            win_prob = 1.0 - prob_in_range
+            return min(0.9999, win_prob * base_accuracy + (1.0 - base_accuracy) * 0.5)
+        
+        # 2. Exceed/Above Threshold bet
+        elif comparison == "above":
             forecast_val = forecast_high if forecast_high is not None else current_temp
             if forecast_val is None:
                 return 0.5
             
-            margin = threshold_temp - forecast_val  # How far below threshold?
-            if margin > 0:
-                # Forecast says it WON'T exceed — confidence depends on margin vs RMSE
-                # If margin is 10°F and RMSE is 3°F, very confident
-                z_score = margin / temp_rmse
-                from math import erf, sqrt
-                confidence = 0.5 * (1 + erf(z_score / sqrt(2)))
-                # Blend with base accuracy
-                return min(0.9999, confidence * base_accuracy + (1 - base_accuracy) * 0.5)
-            else:
-                # Forecast says it WILL exceed — we'd buy the other side
-                margin_above = forecast_val - threshold_temp
-                z_score = margin_above / temp_rmse
-                from math import erf, sqrt
-                confidence = 0.5 * (1 + erf(z_score / sqrt(2)))
-                return min(0.9999, confidence * base_accuracy + (1 - base_accuracy) * 0.5)
+            margin = threshold_temp - forecast_val  # distance below threshold
+            z_score = margin / temp_rmse
+            confidence = 0.5 * (1.0 + math.erf(z_score / math.sqrt(2.0)))
+            
+            # If margin is positive: NWS says it won't exceed. Confidence is the CDF prob of staying below.
+            # If margin is negative: NWS says it will exceed. We buy YES, confidence is CDF of exceeding.
+            if margin < 0:
+                confidence = 1.0 - confidence
+                
+            return min(0.9999, confidence * base_accuracy + (1.0 - base_accuracy) * 0.5)
         
+        # 3. Below Threshold bet
         elif comparison == "below":
             forecast_val = forecast_low if forecast_low is not None else current_temp
             if forecast_val is None:
                 return 0.5
             
-            margin = forecast_val - threshold_temp  # How far above threshold?
-            if margin > 0:
-                # Forecast says it WON'T go below — confidence depends on margin
-                z_score = margin / temp_rmse
-                from math import erf, sqrt
-                confidence = 0.5 * (1 + erf(z_score / sqrt(2)))
-                return min(0.9999, confidence * base_accuracy + (1 - base_accuracy) * 0.5)
-            else:
-                margin_below = threshold_temp - forecast_val
-                z_score = margin_below / temp_rmse
-                from math import erf, sqrt
-                confidence = 0.5 * (1 + erf(z_score / sqrt(2)))
-                return min(0.9999, confidence * base_accuracy + (1 - base_accuracy) * 0.5)
+            margin = forecast_val - threshold_temp  # distance above threshold
+            z_score = margin / temp_rmse
+            confidence = 0.5 * (1.0 + math.erf(z_score / math.sqrt(2.0)))
+            
+            if margin < 0:
+                confidence = 1.0 - confidence
+                
+            return min(0.9999, confidence * base_accuracy + (1.0 - base_accuracy) * 0.5)
         
-        return 0.5  # Unknown comparison type
+        return 0.5
     
     @classmethod
     def score_precipitation_market(cls, precip_probability: float,
                                     threshold: str,  # "rain" or "no_rain"
                                     hours_to_resolution: float) -> float:
-        """Score confidence for a precipitation market."""
         base_accuracy = cls._interpolate_accuracy(hours_to_resolution)
-        
         if threshold == "no_rain":
-            # We want confidence it WON'T rain
             no_rain_prob = 1.0 - precip_probability
-            # NWS precip forecasts are well-calibrated
             return min(0.9999, no_rain_prob * base_accuracy + (1 - base_accuracy) * 0.5)
         elif threshold == "rain":
             return min(0.9999, precip_probability * base_accuracy + (1 - base_accuracy) * 0.5)
-        
         return 0.5
-    
-    @classmethod
-    def score_generic_market(cls, nws_text: str, market_question: str,
-                              hours_to_resolution: float) -> float:
-        """
-        Score confidence for generic weather markets by parsing NWS text.
-        Uses keyword matching and certainty indicators.
-        """
-        base_accuracy = cls._interpolate_accuracy(hours_to_resolution)
-        
-        # Certainty indicators in NWS forecasts
-        high_certainty_phrases = ["certain", "definitely", "will", "confirmed",
-                                   "expected", "forecast", "guaranteed"]
-        moderate_certainty = ["likely", "probable", "chance", "possible"]
-        low_certainty = ["uncertain", "may", "might", "could", "unlikely"]
-        
-        text_lower = nws_text.lower() + " " + market_question.lower()
-        
-        high_count = sum(1 for phrase in high_certainty_phrases if phrase in text_lower)
-        low_count = sum(1 for phrase in low_certainty if phrase in text_lower)
-        
-        if high_count > low_count:
-            return min(0.9999, 0.95 * base_accuracy)
-        elif low_count > high_count:
-            return min(0.9999, 0.60 * base_accuracy)
-        else:
-            return min(0.9999, 0.80 * base_accuracy)
-    
-    @classmethod
-    def _interpolate_accuracy(cls, hours: float) -> float:
-        """Interpolate NWS accuracy from lead time table."""
-        hours_key = min(cls.ACCURACY_BY_HOURS.keys(), 
-                       key=lambda x: abs(x - hours))
-        return cls.ACCURACY_BY_HOURS[hours_key]
-    
-    @classmethod
-    def _interpolate_rmse(cls, hours: float) -> float:
-        """Interpolate temperature RMSE from lead time table."""
-        hours_key = min(cls.TEMP_RMSE_BY_HOURS.keys(), 
-                       key=lambda x: abs(x - hours))
-        return cls.TEMP_RMSE_BY_HOURS[hours_key]
 
 
 class NWSForecastMatcher:
     """
-    Matches Polymarket weather questions to NWS forecast data.
-    Parses the market question to extract: location, weather metric, threshold, time.
+    Parses weather questions and matches them against the global city coordinates.
     """
     
-    # Major US cities with NWS station coordinates
+    # Unified 70+ Global City Registry (loaded from quant backtest engine)
     CITY_COORDS = {
-        "new york": (40.7128, -74.0060),
-        "nyc": (40.7128, -74.0060),
-        "los angeles": (34.0522, -118.2437),
-        "la": (34.0522, -118.2437),
-        "chicago": (41.8781, -87.6298),
-        "houston": (29.7604, -95.3698),
-        "phoenix": (33.4484, -112.0740),
-        "philly": (39.9526, -75.1652),
-        "philadelphia": (39.9526, -75.1652),
-        "san antonio": (29.4241, -98.4936),
-        "san diego": (32.7157, -117.1611),
-        "dallas": (32.7767, -96.7970),
-        "san jose": (37.3382, -121.8863),
-        "austin": (30.2672, -97.7431),
-        "jacksonville": (30.3322, -81.6557),
-        "fort worth": (32.7555, -97.3308),
-        "columbus": (39.9612, -82.9988),
-        "charlotte": (35.2271, -80.8431),
-        "san francisco": (37.7749, -122.4194),
-        "sf": (37.7749, -122.4194),
-        "indianapolis": (39.7684, -86.1581),
-        "seattle": (47.6062, -122.3321),
-        "denver": (39.7392, -104.9903),
-        "washington dc": (38.9072, -77.0369),
-        "dc": (38.9072, -77.0369),
-        "boston": (42.3601, -71.0589),
-        "el paso": (31.7619, -106.4850),
-        "nashville": (36.1627, -86.7816),
-        "detroit": (42.3314, -83.0458),
-        "oklahoma city": (35.4676, -97.5164),
-        "portland": (45.5152, -122.6784),
-        "las vegas": (36.1699, -115.1398),
-        "memphis": (35.1495, -90.0490),
-        "louisville": (38.2527, -85.7585),
-        "baltimore": (39.2904, -76.6122),
-        "milwaukee": (43.0389, -87.9065),
-        "albuquerque": (35.0844, -106.6504),
-        "tucson": (32.2226, -110.9747),
-        "fresno": (36.7378, -119.7839),
-        "sacramento": (38.5816, -121.4944),
-        "kansas city": (39.0997, -94.5786),
-        "atlanta": (33.7490, -84.3880),
-        "miami": (25.7617, -80.1918),
-        "orlando": (28.5383, -81.3792),
-        "tampa": (27.9506, -82.4572),
-        "minneapolis": (44.9778, -93.2650),
-        "honolulu": (21.3069, -157.8583),
-        "omaha": (41.2565, -95.9345),
-        "cincinnati": (39.1031, -84.5120),
-        "pittsburgh": (40.4406, -79.9959),
-        "raleigh": (35.7796, -78.6382),
-        "salt lake city": (40.7608, -111.8910),
+        # US cities
+        "new york": (40.71, -74.01), "nyc": (40.71, -74.01), "new york city": (40.71, -74.01),
+        "los angeles": (34.05, -118.24), "la": (34.05, -118.24), "chicago": (41.88, -87.63), 
+        "houston": (29.76, -95.37), "phoenix": (33.45, -112.07), "denver": (39.74, -104.99),
+        "dallas": (32.78, -96.80), "miami": (25.76, -80.19), "atlanta": (33.75, -84.39), 
+        "boston": (42.36, -71.06), "seattle": (47.61, -122.33), "san francisco": (37.77, -122.42),
+        "sf": (37.77, -122.42), "washington": (38.91, -77.04), "detroit": (42.33, -83.05),
+        "philadelphia": (39.95, -75.17), "philly": (39.95, -75.17), "minneapolis": (44.98, -93.27),
+        "nashville": (36.16, -86.77), "portland": (45.52, -122.68), "las vegas": (36.17, -115.14), 
+        "austin": (30.27, -97.74), "orlando": (28.54, -81.38), "tampa": (27.95, -82.46),
+        # International
+        "london": (51.51, -0.13), "paris": (48.86, 2.35), "tokyo": (35.68, 139.69), 
+        "beijing": (39.90, 116.41), "shanghai": (31.23, 121.47), "seoul": (37.57, 126.98),
+        "mumbai": (19.08, 72.88), "delhi": (28.61, 77.21), "cairo": (30.04, 31.24), 
+        "sydney": (-33.87, 151.21), "toronto": (43.65, -79.38), "moscow": (55.76, 37.62),
+        "berlin": (52.52, 13.41), "rome": (41.90, 12.50), "madrid": (40.42, -3.70), 
+        "istanbul": (41.01, 28.98), "bangkok": (13.76, 100.50), "singapore": (1.35, 103.82),
+        "dubai": (25.20, 55.27), "mexico city": (19.43, -99.13), "são paulo": (-23.55, -46.63), 
+        "buenos aires": (-34.60, -58.38), "ankara": (39.93, 32.86), "tel aviv": (32.08, 34.78),
+        "chongqing": (29.56, 106.55), "melbourne": (-37.81, 144.96), "bucharest": (44.43, 26.10), 
+        "warsaw": (52.23, 21.01), "budapest": (47.50, 19.04), "vienna": (48.21, 16.37),
+        "amsterdam": (52.37, 4.90), "brussels": (50.85, 4.35), "zurich": (47.38, 8.54), 
+        "stockholm": (59.33, 18.07), "oslo": (59.91, 10.75), "helsinki": (60.17, 24.94),
+        "copenhagen": (55.68, 12.57), "dublin": (53.35, -6.26), "lisbon": (38.72, -9.14), 
+        "athens": (37.98, 23.73), "jakarta": (-6.21, 106.85), "kuala lumpur": (3.14, 101.69),
+        "taipei": (25.03, 121.57), "hong kong": (22.32, 114.17), "nairobi": (-1.29, 36.82), 
+        "lagos": (6.52, 3.38), "capetown": (-33.92, 18.42), "johannesburg": (-26.20, 28.05),
+        "lima": (-12.05, -77.04), "bogota": (4.71, -74.07), "santiago": (-33.45, -70.67), 
+        "caracas": (10.49, -66.88), "lucknow": (26.85, 80.95), "wellington": (-41.29, 174.78),
+        "manila": (14.60, 120.98), "qingdao": (36.07, 120.38), "shenzhen": (22.54, 114.06), 
+        "jeddah": (21.49, 39.19)
     }
-    
-    # Temperature pattern: "Will [city] high temp exceed 90°F?"
-    TEMP_PATTERN = re.compile(
-        r"(?:will\s+)?(?:the\s+)?(\w[\w\s]{1,25})\s+"
-        r"(high|low)\s+(?:temp(?:erature)?\s+)?"
-        r"(exceed|reach|hit|go\s+above|go\s+below|drop\s+below|stay\s+above|stay\s+below)\s+"
-        r"(\d+)\s*°?\s*F?",
-        re.IGNORECASE
-    )
-    
-    # Precipitation pattern
-    PRECIP_PATTERN = re.compile(
-        r"(?:will\s+)?(?:the\s+)?(\w[\w\s]{1,25})\s+"
-        r"(?:see|get|have|experience)\s+"
-        r"(rain|snow|precipitation|thunderstorm)",
-        re.IGNORECASE
-    )
-    
+
     @classmethod
     def parse_market_question(cls, question: str) -> Optional[dict]:
         """
-        Parse a Polymarket weather question into structured components.
-        
-        Returns dict with: city, metric, comparison, threshold, hours_to_resolution
-        or None if it can't parse the question.
+        Robustly parses a Polymarket question to extract target temperatures, ranges,
+        units, and matches the correct geocoded city name.
         """
-        question = question.strip()
+        q_clean = question.lower().strip()
         
-        # Try temperature pattern
-        temp_match = cls.TEMP_PATTERN.search(question)
-        if temp_match:
-            city_raw = temp_match.group(1).strip().lower()
-            high_low = temp_match.group(2).lower()
-            comparison_raw = temp_match.group(3).lower()
-            threshold = float(temp_match.group(4))
-            
-            coords = cls.CITY_COORDS.get(city_raw)
-            if not coords:
-                # Try partial match
-                for city, c in cls.CITY_COORDS.items():
-                    if city in city_raw or city_raw in city:
-                        coords = c
-                        break
-            
-            comparison = "above" if comparison_raw in ("exceed", "reach", "hit", 
-                                                         "go above", "stay above") else "below"
-            
-            return {
-                "city": city_raw,
-                "lat": coords[0] if coords else None,
-                "lon": coords[1] if coords else None,
-                "metric": "temperature",
-                "high_low": high_low,
-                "comparison": comparison,
-                "threshold_temp": threshold,
-                "found_coords": coords is not None,
-            }
+        # 1. Detect Temperature Unit
+        unit = "F" if any(x in q_clean for x in ["°f", "fahrenheit", "farenheit"]) else "C"
         
-        # Try precipitation pattern
-        precip_match = cls.PRECIP_PATTERN.search(question)
-        if precip_match:
-            city_raw = precip_match.group(1).strip().lower()
-            precip_type = precip_match.group(2).lower()
-            
-            coords = cls.CITY_COORDS.get(city_raw)
-            if not coords:
-                for city, c in cls.CITY_COORDS.items():
-                    if city in city_raw or city_raw in city:
-                        coords = c
-                        break
-            
-            return {
-                "city": city_raw,
-                "lat": coords[0] if coords else None,
-                "lon": coords[1] if coords else None,
-                "metric": "precipitation",
-                "precip_type": precip_type,
-                "threshold": "rain" if precip_type in ("rain", "thunderstorm") else "no_rain",
-                "found_coords": coords is not None,
-            }
+        # 2. Match Target Temperature, Ranges, and Comparisons
+        target_temp = None
+        comparison = "above"
+        range_low = None
+        range_high = None
         
-        return None  # Can't parse this question
-    
+        # Range match: "between 46-47" or "between 46 and 47"
+        m_range = re.search(r"between\s+(\d+(?:\.\d+)?)\s*[-–\s\band\b]+\s*(\d+(?:\.\d+)?)\s*(?:°|degree|c|f)?", q_clean)
+        if m_range:
+            low = float(m_range.group(1))
+            high = float(m_range.group(2))
+            range_low = low
+            range_high = high
+            target_temp = (low + high) / 2
+            comparison = "range"
+        else:
+            # Specific threshold match: e.g. "22°C" or "75 degrees"
+            m_thresh = re.search(r"(\d+(?:\.\d+)?)\s*(?:°|degree|celsius|fahrenheit|\bc\b|\bf\b)", q_clean)
+            if m_thresh:
+                thresh = float(m_thresh.group(1))
+                if thresh < 150:  # Ignore years/dates accidentally matched
+                    target_temp = thresh
+                    if "or higher" in q_clean or "above" in q_clean or "exceed" in q_clean or "reach" in q_clean or "hit" in q_clean:
+                        comparison = "above"
+                    elif "or below" in q_clean or "below" in q_clean or "drop" in q_clean:
+                        comparison = "below"
+                    else:
+                        comparison = "above"
+            
+            # Fallback: extract the first number in the question < 150
+            if target_temp is None:
+                nums = re.findall(r"(\d+(?:\.\d+)?)", q_clean)
+                if nums:
+                    valid_nums = [float(n) for n in nums if float(n) < 150]
+                    if valid_nums:
+                        target_temp = valid_nums[0]
+                        if "or higher" in q_clean or "above" in q_clean or "exceed" in q_clean or "reach" in q_clean or "hit" in q_clean:
+                            comparison = "above"
+                        elif "or below" in q_clean or "below" in q_clean or "drop" in q_clean:
+                            comparison = "below"
+                        else:
+                            comparison = "above"
+        
+        if target_temp is None:
+            return None
+            
+        # 3. Geocode City Name
+        city_found = None
+        coords = None
+        
+        # Word-boundary key check to avoid matching "ok" for "oklahoma"
+        for city, c_coords in cls.CITY_COORDS.items():
+            if re.search(r'\b' + re.escape(city) + r'\b', q_clean):
+                city_found = city
+                coords = c_coords
+                break
+                
+        if not city_found:
+            # Fuzzy partial fallback
+            for city, c_coords in cls.CITY_COORDS.items():
+                if city in q_clean:
+                    city_found = city
+                    coords = c_coords
+                    break
+                    
+        if not city_found or not coords:
+            return None
+            
+        # 4. Standardize all calculations to Fahrenheit
+        thresh_f = target_temp
+        if unit == "C":
+            thresh_f = (target_temp * 9 / 5) + 32
+            if range_low is not None:
+                range_low = (range_low * 9 / 5) + 32
+            if range_high is not None:
+                range_high = (range_high * 9 / 5) + 32
+                
+        high_low = "high"
+        if any(x in q_clean for x in ["lowest", "minimum", "low temp", "low of", "drop below"]):
+            high_low = "low"
+            
+        return {
+            "city": city_found,
+            "lat": coords[0],
+            "lon": coords[1],
+            "metric": "temperature",
+            "high_low": high_low,
+            "comparison": comparison,
+            "threshold_temp": thresh_f,
+            "range_low": range_low,
+            "range_high": range_high,
+            "unit": "F",
+            "found_coords": True,
+        }
+
     @classmethod
     async def compute_confidence(cls, market_question: str, 
                                   end_date: str,
                                   nws_client: NWSClient) -> Optional[NWSForecast]:
         """
-        Full pipeline: parse question → get NWS forecast → compute confidence.
+        Parses question → Queries Open-Meteo → Matches target dates → Returns confidence.
         """
         parsed = cls.parse_market_question(market_question)
         if not parsed:
             logger.debug(f"Cannot parse weather question: {market_question}")
             return None
         
-        if not parsed.get("found_coords"):
-            logger.debug(f"City not in database: {parsed.get('city')}")
-            return None
-        
         lat = parsed["lat"]
         lon = parsed["lon"]
         
-        # Get forecast
+        # Get live daily forecast from Open-Meteo (global coverage)
         forecast_data = await nws_client.get_forecast_for_location(lat, lon)
-        if not forecast_data or "properties" not in forecast_data:
+        if not forecast_data or "daily" not in forecast_data:
+            logger.warning(f"Could not retrieve global forecast for {parsed['city']}")
             return None
-        
+            
         # Parse hours to resolution
         try:
             end_dt = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
             hours_to_resolution = (end_dt - datetime.now(timezone.utc)).total_seconds() / 3600
             if hours_to_resolution < 0:
-                return None
+                hours_to_resolution = 1.0  # Fallback to current hour
         except (ValueError, AttributeError):
-            hours_to_resolution = 12  # Default
+            hours_to_resolution = 12.0  # Default
+            
+        # Extract target date (YYYY-MM-DD) from the contract's resolution end_date
+        try:
+            target_date = end_date.split('T')[0]
+        except Exception:
+            target_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            
+        daily = forecast_data.get("daily", {})
+        times = daily.get("time", [])
+        max_temps = daily.get("temperature_2m_max", [])
+        min_temps = daily.get("temperature_2m_min", [])
         
-        # Extract forecast values
-        periods = forecast_data["properties"].get("periods", [])
         forecast_high = None
         forecast_low = None
-        precip_prob = None
         
-        for period in periods[:4]:  # Next 4 periods
-            if period.get("isDaytime"):
-                temp = period.get("temperature")
-                if temp:
-                    forecast_high = float(temp)
-            else:
-                temp = period.get("temperature")
-                if temp:
-                    forecast_low = float(temp)
+        # Match exact date corresponding to resolution
+        if target_date in times:
+            idx = times.index(target_date)
+            forecast_high = float(max_temps[idx]) if idx < len(max_temps) and max_temps[idx] is not None else None
+            forecast_low = float(min_temps[idx]) if idx < len(min_temps) and min_temps[idx] is not None else None
+        else:
+            # Fallback to day 1
+            forecast_high = float(max_temps[0]) if max_temps and max_temps[0] is not None else None
+            forecast_low = float(min_temps[0]) if min_temps and min_temps[0] is not None else None
             
-            pp = period.get("probabilityOfPrecipitation", {})
-            val = pp.get("value") if isinstance(pp, dict) else pp
-            if val is not None:
-                precip_prob = float(val) / 100.0
+        forecast_text = f"Global forecast for {parsed['city']} on {target_date}: High {forecast_high}°F / Low {forecast_low}°F"
         
-        forecast_text = periods[0].get("detailedForecast", "") if periods else ""
-        
-        # Compute confidence based on market type
+        # Compute confidence based on metric
         confidence = 0.5
         if parsed["metric"] == "temperature":
             confidence = NWSConfidenceScorer.score_temperature_market(
@@ -470,17 +411,18 @@ class NWSForecastMatcher:
                 forecast_low=forecast_low,
                 threshold_temp=parsed["threshold_temp"],
                 comparison=parsed["comparison"],
-                hours_to_resolution=hours_to_resolution
+                hours_to_resolution=hours_to_resolution,
+                range_low=parsed.get("range_low"),
+                range_high=parsed.get("range_high")
             )
         elif parsed["metric"] == "precipitation":
             confidence = NWSConfidenceScorer.score_precipitation_market(
-                precip_probability=precip_prob or 0.5,
+                precip_probability=0.2,  # default standard probability
                 threshold=parsed["threshold"],
                 hours_to_resolution=hours_to_resolution
             )
-        
-        # Determine station_id from city
-        station_id = f"K{parsed['city'][:3].upper()}"
+            
+        station_id = f"OM_{parsed['city'][:3].upper()}"
         
         return NWSForecast(
             station_id=station_id,
@@ -489,36 +431,31 @@ class NWSForecastMatcher:
             forecast_text=forecast_text,
             high_temp_f=int(forecast_high) if forecast_high else None,
             low_temp_f=int(forecast_low) if forecast_low else None,
-            precipitation_prob=precip_prob,
+            precipitation_prob=0.2,
             confidence=confidence,
             issued_at=datetime.now(timezone.utc).isoformat(),
             expires_at=end_date
         )
 
 
-# ─── Sync wrapper for non-async contexts ───
-
-def get_nws_forecast_sync(market_question: str, end_date: str,
-                           config: ColdMathConfig) -> Optional[NWSForecast]:
-    """Synchronous wrapper for NWS forecast computation."""
-    async def _inner():
-        client = NWSClient(config)
-        try:
-            return await NWSForecastMatcher.compute_confidence(
-                market_question, end_date, client
-            )
-        finally:
-            await client.close()
+class NWSForecastMatcherSync:
+    """Synchronous wrapper for computing confidence."""
     
-    try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            # We're inside an existing event loop — create a new one
+    def __init__(self, config: ColdMathConfig):
+        self.cfg = config
+        
+    def compute(self, market_question: str, end_date: str) -> Optional[NWSForecast]:
+        async def _inner():
+            client = NWSClient(self.cfg)
+            try:
+                return await NWSForecastMatcher.compute_confidence(market_question, end_date, client)
+            finally:
+                await client.close()
+                
+        try:
+            return asyncio.run(_inner())
+        except RuntimeError:
             import concurrent.futures
             with concurrent.futures.ThreadPoolExecutor() as pool:
                 future = pool.submit(asyncio.run, _inner())
-                return future.result(timeout=30)
-        else:
-            return loop.run_until_complete(_inner())
-    except RuntimeError:
-        return asyncio.run(_inner())
+                return future.result(timeout=60)
