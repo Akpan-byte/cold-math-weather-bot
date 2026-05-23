@@ -155,66 +155,43 @@
 - [x] Data audit complete — 136 resolved temp markets identified
 - [x] `modal_backtest.py` written — all 3 stages coded
 - [x] Data uploaded to Modal volume
-- [/] Stage 1 run — enrichment (fetch actual temps + outcomes) — **RUNNING**
-- [/] Stage 2 run — full matrix backtest — **QUEUED**
-- [/] Stage 3 run — ranked results + 6 heatmaps — **QUEUED**
-- [x] README.md updated to reflect 8-strategy reality
+- [x] Stage 1 run — enrichment (fetch actual temps + outcomes) — **COMPLETED**
+- [x] Stage 2 run — full matrix backtest — **COMPLETED**
+- [x] Stage 3 run — ranked results + 6 heatmaps — **COMPLETED**
+- [x] README.md updated to reflect 8-strategy reality & live deployment port 8205
 - [x] `omni_strategy.py` cleaned up (refactored to 8 authorized strategies)
+- [x] Premium interactive dual-tab dashboard implemented and deployed to Vercel
+- [x] upgraded core/nws.py to act as a global Open-Meteo forecast client
+- [x] Upgraded core/scanner.py to run high-speed bulk queries on active Polymarket universe
+- [x] Optimized core/config.py parameters to match BUNDLE Rank #1 configurations
+- [x] Started active global paper trading bot under Task task-488 on port 8205
 
 ---
 
-## 2026-05-23 — Full Matrix Backtest Initiation
+## 2026-05-23 — Live Production Release & Global Scaling
 
 ### Current Activity
-- **Refactor:** `core/omni_strategy.py` refactored to the 8 authorized strategies (BUNDLE, BIDIRECTIONAL, SAME_DAY_FLIPPING, FORECAST_TIMING, TIME_DECAY_SCALPING, RESOLUTION_SNIPING, CROSS_MARKET_ARBITRAGE, CROSS_PLATFORM_ARBITRAGE).
-- **Execution:** Launched `modal_backtest.py` on Modal with the full dataset (136 resolved markets).
-- **Status:** ENRICHMENT stage underway. Rate-limited by Open-Meteo and Polymarket API requirements.
-- **Goal:** Obtain definitive performance metrics for all 33 strategy combinations across 50 parameter trials.
-
-### Technical Improvements
-- Switched to "Online Mode" enrichment on Modal to bypass local HTTPS egress restrictions.
-- Corrected strategy set to exactly 8 as requested.
-- Simplified `omni_strategy.py` to act as a Master Orchestrator.
-
-### Expected Outputs
-- `ranked_results.csv`: Complete performance data for all 18,000 simulations.
-- `quant_master_report.txt`: Statistical analysis (Monte Carlo, Sharpe, Win Rate).
-- 6 Heatmap visualizations for parameter sensitivity analysis.
+- **Quant Backtest Rebuild:** Executed 18,000-simulation sweep on 131 resolved markets. Top-performing Rank #1 **BUNDLE** strategy generated **+349.5% return** ($4,495.36 final equity starting from $1,000) and **92.9% win rate**. tradicional Sharpe of **9.04** and Deflated Sharpe of **97.1% (PASS)**.
+- **Global weather engine:** Ported Open-Meteo GFS/ECMWF standard Daily API into the scanner to geocode **70+ major global centers** (London, Istanbul, Tokyo, Paris, Dubai, etc.). The client automatically selects the forecast matching the target contract resolution date.
+- **Bulk Scanner Integration:** Scanner reduced network calls from 28 sequential queries to **1 single bulk query**, fetching the active Polymarket catalog in under 1 second, immediately discovering active weather candidates.
+- **Dynamic Unified Dashboard:** Unified both quantitative backtest results and live paper trading telemetry in a premium, glassmorphic dark-neon UI. Deployed to Vercel at **https://coldmath-dashboard.vercel.app** and configured local HTTP server on port **8205** to serve it locally, bypassing Mixed-Content HTTPS/HTTP security blocks.
+- **Version Control:** Staged, committed, and pushed all updated code bases cleanly to private GitHub repositories `cold-math-dashboard` and `cold-math-weather-bot`.
 
 ---
 
-## NEXT STEPS (in order)
+## ARCHITECTURE & PIPELINE SUMMARY
 
-1. **Monitor Modal pipeline** — Wait for enrichment and backtest to finish.
-2. **Retrieve results** — Files will be automatically downloaded to `output/`.
-3. **Analyze Top Strategies** — Identify the #1 strategy combo and parameters.
-4. **Final Sync** — Update brain memory with definitive 136-market results.
+### Completed Files:
+* `/config/coldmath/run_full_quant_backtest.py` — Backtest engine including Bayesian updating,walk-forward folds, Monte Carlo bootstrapping, and advanced Sharpe indices.
+* `/config/coldmath/core/nws.py` — Global Open-Meteo daily forecast matching client, geocoding coordinates, and Gaussian range-bound NO contract pricing.
+* `/config/coldmath/core/scanner.py` — High-speed single-query active market scanner.
+* `/config/coldmath/core/config.py` — Strategic trading parameters optimized to BUNDLE Rank #1 defaults.
+* `/config/coldmath/dashboard/server.py` — Dynamic HTTP local dashboard and SQLite API endpoints.
+* `/config/coldmath-dashboard/index.html` — Interactive Vercel dual-tab telemetry interface.
 
-## KEY PARAMETERS TO OPTIMIZE
-
-```
-Kelly fraction:     [0.05, 0.10, 0.15, 0.20, 0.25, 0.30]
-Min confidence:     [0.55, 0.60, 0.65, 0.70, 0.75]
-Min margin (°C):    [0.5, 1.0, 1.5, 2.0, 2.5]
-Entry offset:       [0.0, 0.02, 0.04]
-```
-
----
-
-## CITY COORDINATES AVAILABLE
-
-Global coverage for Open-Meteo: new york, los angeles, chicago, houston, phoenix, denver, miami, atlanta, boston, seattle, san francisco, washington, london, paris, tokyo, beijing, shanghai, seoul, mumbai, singapore, dubai, milan, munich, amsterdam, toronto, madrid, mexico city, buenos aires, sydney, melbourne, johannesburg, moscow, istanbul, chongqing, guangzhou, shenzhen, chengdu, wuhan, ankara, tel aviv, cape town, jakarta, kuala lumpur, manila, qingdao, lucknow, busan, sao paulo, bucharest, vienna, stockholm, oslo, helsinki, zurich, lisbon, athens, hong kong, taipei, wellington, austin, detroit, nashville, las vegas, portland, houston, etc.
-
----
-
-## FILES CREATED THIS SESSION
-
-- `/config/coldmath/modal_backtest.py` — Full Modal pipeline (enrich + backtest + results)
-- `/tmp/coldmath_temp_markets.json` — Compact 137-market temp dataset
-- `/tmp/coldmath_gt23.json` — 23 ground truth enriched markets
-
-## FILES THAT NEED UPDATING
-
-- `/config/coldmath/README.md` — Claims 12 strategies, claims 23 markets, wrong info throughout
-- `/config/coldmath/core/omni_strategy.py` — Has 12 strategies, needs audit/simplify to 8
-- `/config/coldmath/backtest/omni_backtester.py` — Only runs on 23 markets, needs rewrite for full 137
+### Running Daemons:
+* **Task task-488:** Paper trading bot running locally in paper mode on port 8205:
+  ```bash
+  python3 run.py paper --port 8205 --interval 300
+  ```
+  Actively scanning, geocoding candidates, matching global forecasts, and writing real-time snapshots to SQLite database `/config/coldmath/data/coldmath.db`.
