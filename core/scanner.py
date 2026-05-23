@@ -53,21 +53,78 @@ class PolymarketScanner:
     
     async def scan_weather_markets(self) -> list[MarketCandidate]:
         """Find all weather-related markets on Polymarket."""
+        url = f"{self.cfg.gamma_api_base}/markets"
+        params = {
+            "closed": "false",
+            "limit": "1000",
+            "order": "liquidity",
+            "ascending": "false",
+        }
+        
+        data = await self._get(url, params)
+        if not data:
+            return []
+            
+        items = data if isinstance(data, list) else data.get("data", [])
+        logger.info(f"Retrieved {len(items)} total active markets in bulk")
+        
         all_markets = []
         
-        # Search Gamma API for weather markets
-        for keyword in self.cfg.weather_keywords:
-            markets = await self._search_gamma(keyword, limit=50)
-            if markets:
-                all_markets.extend(markets)
-            await asyncio.sleep(0.5)  # Rate limit
-        
-        # Search for near-certain markets
-        for keyword in self.cfg.near_certain_keywords:
-            markets = await self._search_gamma(keyword, limit=20)
-            if markets:
-                all_markets.extend(markets)
-            await asyncio.sleep(0.5)
+        for item in items:
+            try:
+                question = item.get("question", "")
+                q_lower = question.lower()
+                
+                # Check keywords locally
+                is_weather = any(kw in q_lower for kw in self.cfg.weather_keywords)
+                is_near_certain = any(kw in q_lower for kw in self.cfg.near_certain_keywords)
+                
+                if not (is_weather or is_near_certain):
+                    continue
+                    
+                # Parse outcomes/tokens
+                tokens = item.get("clobTokenIds", [])
+                outcomes = item.get("outcomes", [])
+                outcomes_prices = item.get("outcomePrices", [])
+                
+                if not tokens or not outcomes:
+                    continue
+                
+                for i, outcome in enumerate(outcomes):
+                    price_str = outcomes_prices[i] if i < len(outcomes_prices) else "0.5"
+                    try:
+                        price = float(price_str)
+                    except (ValueError, TypeError):
+                        price = 0.5
+                    
+                    # SWEET SPOT FILTER (Fills custom BUNDLE rules)
+                    if not (self.cfg.min_entry_price <= price <= self.cfg.max_entry_price):
+                        continue
+                    
+                    token_id = tokens[i] if i < len(tokens) else ""
+                    condition_id = item.get("conditionId", "")
+                    
+                    end_date = item.get("endDate", item.get("end_date_iso", ""))
+                    if not end_date:
+                        end_date = (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat()
+                    
+                    candidate = MarketCandidate(
+                        market_id=item.get("id", ""),
+                        question=question,
+                        outcome=outcome,
+                        price=price,
+                        volume=float(item.get("volume", 0) or 0),
+                        liquidity=0.0,
+                        end_date=end_date,
+                        condition_id=condition_id,
+                        token_id=token_id,
+                        category="weather" if is_weather else "near_certain"
+                    )
+                    all_markets.append(candidate)
+                    
+            except Exception as e:
+                logger.debug(f"Error parsing market: {e}")
+                continue
         
         # Deduplicate by market ID
         seen = set()
@@ -77,8 +134,7 @@ class PolymarketScanner:
                 seen.add(m.market_id)
                 unique.append(m)
         
-        logger.info(f"Found {len(unique)} unique candidate markets "
-                    f"(from {len(all_markets)} total)")
+        logger.info(f"Found {len(unique)} weather/near-certain candidates from active universe")
         
         # Enrich with orderbook data
         enriched = []
@@ -92,78 +148,8 @@ class PolymarketScanner:
         return enriched
     
     async def _search_gamma(self, keyword: str, limit: int = 50) -> list[MarketCandidate]:
-        """Search Polymarket Gamma API for markets matching a keyword."""
-        url = f"{self.cfg.gamma_api_base}/markets"
-        params = {
-            "closed": "false",
-            "limit": str(limit),
-            "order": "liquidity",
-            "ascending": "false",
-        }
-        
-        data = await self._get(url, params)
-        if not data:
-            return []
-        
-        candidates = []
-        items = data if isinstance(data, list) else data.get("data", [])
-        
-        for item in items:
-            try:
-                question = item.get("question", "")
-                if not self._is_weather_related(question, keyword):
-                    continue
-                
-                # Parse outcomes/tokens
-                tokens = item.get("clobTokenIds", [])
-                outcomes = item.get("outcomes", [])
-                outcomes_prices = item.get("outcomePrices", [])
-                
-                if not tokens or not outcomes:
-                    continue
-                
-                # We want to buy the side that our model says will win
-                # Typically for weather: buy YES if we're confident, or NO if contrarian
-                for i, outcome in enumerate(outcomes):
-                    price_str = outcomes_prices[i] if i < len(outcomes_prices) else "0.5"
-                    try:
-                        price = float(price_str)
-                    except (ValueError, TypeError):
-                        price = 0.5
-                    
-                    # We're interested in outcomes priced 88-96¢ (our sweet spot)
-                    if not (self.cfg.min_entry_price <= price <= self.cfg.max_entry_price):
-                        continue
-                    
-                    token_id = tokens[i] if i < len(tokens) else ""
-                    condition_id = item.get("conditionId", "")
-                    
-                    end_date = item.get("endDate", item.get("end_date_iso", ""))
-                    if not end_date:
-                        # Try to infer from question or skip
-                        end_date = (datetime.now(timezone.utc) + 
-                                   __import__('datetime').timedelta(hours=24)).isoformat()
-                    
-                    candidate = MarketCandidate(
-                        market_id=item.get("id", ""),
-                        question=question,
-                        outcome=outcome,
-                        price=price,
-                        volume=float(item.get("volume", 0) or 0),
-                        liquidity=0.0,  # Will be enriched later
-                        end_date=end_date,
-                        condition_id=condition_id,
-                        token_id=token_id,
-                        category="weather" if any(kw in question.lower() 
-                                  for kw in self.cfg.weather_keywords) else "near_certain"
-                    )
-                    candidates.append(candidate)
-                    
-            except Exception as e:
-                logger.debug(f"Error parsing market: {e}")
-                continue
-        
-        return candidates
+        """Backward compatibility dummy search."""
+        return []
     
     def _is_weather_related(self, question: str, keyword: str) -> bool:
         """Check if a market question is related to our target keywords."""
